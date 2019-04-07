@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+
+description = '''
+Script to pin nix, nixpkgs etc versions for reproducibility.
+
+Simply write `./mynix` in front of any nix-related command.
+
+See 'pinned-tools.nix' for which tools are pinned.
+'''
+
+parser = argparse.ArgumentParser(description=description)
+parser.add_argument('rest', nargs=argparse.REMAINDER)
+args = parser.parse_args()
+
+env = dict(
+  os.environ,
+  NIX_PATH='nix-channel', # our nixpkgs submodule is a subdir in here
+  # Other environment vars we want to always set for this project:
+  NIXOPS_STATE='localstate.nixops',
+)
+
+if shutil.which('nix-build') is None:
+  sys.exit("nix is not available, please install it first")
+
+# Get pinned `nix` executable
+fixed_nix_bin_path = os.path.join(subprocess.check_output(
+    ['nix-build', '-E', 'with (import <nixpkgs> {}); pkgs.nix', '--no-link'],
+    env=env,
+    universal_newlines=True,
+  ).strip(), 'bin')
+
+# Get pinned tools /bin path
+pinned_tools_bin_path = os.path.join(subprocess.check_output(
+    [fixed_nix_bin_path + '/nix-build', 'pinned-tools.nix', '-o', 'pinned-tools'],
+    env=env,
+    universal_newlines=True,
+  ).strip(), 'bin')
+
+# Add our pinned tools to PATH
+env['PATH'] = pinned_tools_bin_path + os.pathsep + env['PATH']
+
+# Run command and exit
+if args.rest == []:
+  parser.print_help()
+else:
+  sys.exit(subprocess.call(args.rest, env=env))
