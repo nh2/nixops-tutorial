@@ -77,7 +77,7 @@ You can quit it with `q`, and disconnect the SSH with `Ctrl+D`.
 
 ### Truly declarative configuration
 
-Now remove the entry `pkgs.jq` from `environment.systemPackages`, and run
+Now remove the entry `pkgs.htop` from `environment.systemPackages`, and run
 
     ./mynix nixops deploy -d example-nginx-deployment
 
@@ -101,7 +101,7 @@ services.nginx = {
 };
 ```
 
-into (again, look up each option on the [NixOS options search pagge](https://nixos.org/nixos/options.html))
+into (again, look up each option on the [NixOS options search page](https://nixos.org/nixos/options.html))
 
 ```nix
 services.nginx = {
