@@ -158,7 +158,8 @@ What's happening here?
 
 * First `nixops` calls `nix` to build our machine declarations into the files involved.
   * The `.drv` files are descriptions of what is to be built (you can `cat` them), and they are built into corresponding outputs files or dirs, like the `...-nginx.conf` (`cat` it!).
-  * The topmost one is the `...-nixos-system-machine1...` one. `ls -l` it to see that it's the full root file system for that machine!
+  * The top-level one for the machine we have declared is the `...-nixos-system-machine1...` one. `ls -l` it to see that it's the full root file system for that machine!
+  * The `...-nixops-machines.drv` describes our entire network of machines (we only have 1 for now).
 * Then `nixops` calls `nix-copy-closure`, copying each file involved and the recursive dependencies to each machine (but only those that aren't already there).
 * Then `nixops` runs the NixOS `switch-to-configuration` script on each machine, that activates the new machine configuration.
 
