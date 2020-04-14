@@ -178,3 +178,7 @@ Don't forget to destroy the created machines with:
     ./mynix nixops destroy -d example-nginx-deployment
 
 You can pass the `--confirm` option if you don't want it to ask interactive questions.
+
+If you also want to delete all local information about past versions of the deployment, you can run:
+
+    ./mynix nixops delete -d example-nginx-deployment
