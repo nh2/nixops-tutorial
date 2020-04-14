@@ -47,6 +47,7 @@ nix-channel/nixpkgs
   ```
 
   The account must have EC2 permissions.
+* The tutorial currently [requires](https://github.com/NixOS/nixops/issues/260) running the steps on Linux.
 
 
 ## Tutorial 1: A simple web server
