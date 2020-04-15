@@ -120,7 +120,11 @@ in
   #     ignored using `...`.
   #     This can be used to, for example, insert the IP of one machine into
   #     the config file of a service on another machine.
-  machine1 = { resources, nodes, ... }: {
+  machine1 = { resources, nodes, ... }:
+  let
+    dnsName = "machine1.nixops-tutorial.aws.nh2.me";
+  in
+  {
 
     # Cloud provider settings; here for AWS
     deployment.targetEnv = "ec2";
@@ -134,6 +138,12 @@ in
     deployment.ec2.securityGroups = []; # we don't want its default `[ "default" ]`
     deployment.ec2.securityGroupIds = [ resources.ec2SecurityGroups.my-nixops-sg.name ];
 
+    deployment.route53 = {
+      accessKeyId = awsKeyId;
+      hostName = dnsName;
+      ttl = 1;
+    };
+
     # Packages available in SSH sessions to the machine
     environment.systemPackages = [
       pkgs.bind.dnsutils # for `dig` etc.
@@ -143,16 +153,19 @@ in
 
     networking.firewall.allowedTCPPorts = [
       80 # HTTP
+      443 # HTTPs
     ];
 
     # Enable nginx service
     services.nginx = {
       enable = true;
-      virtualHosts."someDefaultHost" = {
+      virtualHosts.${dnsName} = {
         default = true; # makes this the default vhost if no other one matches
         locations."/" = {
-          root = pkgs.writeTextDir "index.html" "Hello world!";
+          root = pkgs.writeTextDir "index.html" "Hello world on ${dnsName}!";
         };
+        addSSL = true;
+        enableACME = true;
       };
     };
 
