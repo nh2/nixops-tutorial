@@ -395,7 +395,7 @@ If it does not work, there was probably an issue getting a certificate from Let'
 In that case, SSH into your server and run (replace the domain by yours accordingly):
 
 ```sh
-journalctl -e -u acme-machine1.nixops-tutorial.aws.nh2.me.timer
+journalctl -e -u acme-machine1.nixops-tutorial.aws.nh2.me.service
 ```
 
 This will show you the last errors of the service that fetches the certificate, hopefully allowing you to diagnose the problem.
