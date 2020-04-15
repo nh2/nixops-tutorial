@@ -148,6 +148,12 @@ in
     # Enable nginx service
     services.nginx = {
       enable = true;
+      virtualHosts."someDefaultHost" = {
+        default = true; # makes this the default vhost if no other one matches
+        locations."/" = {
+          root = pkgs.writeTextDir "index.html" "Hello world!";
+        };
+      };
     };
 
   };

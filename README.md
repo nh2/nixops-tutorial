@@ -183,3 +183,219 @@ You can pass the `--confirm` option if you don't want it to ask interactive ques
 If you also want to delete all local information about past versions of the deployment, you can run:
 
     ./mynix nixops delete -d example-nginx-deployment
+
+
+## Tutorial 2: Upgrading the OS and doing rollbacks
+
+We've deployed a simple web server -- boring! Let's do something that's traditionally difficult.
+
+If you have upgraded other Linux distributions before, you may remember it as an unpleasant process.
+For example, in Ubuntu's `do-release-upgrade`, there are often large amounts of waiting, interspersed with occasional questions that you need to answer, such as how to merge your own modified config files with newer versions provided by the OS upstream.
+That means you cannot just step away and let an upgrade complete by itself.
+Further, upgrades often fail, and many distributions provide only assisted upgrades, not downgrades. For example, there exists no `do-release-downgrade` on Ubuntu.
+
+With NixOps (and NixOS in general), these issues are addressed on a fundamental level.
+
+* Because machines are configured declaratively, there are no interactive questions to be asked.
+* Because NixOS configurations are immutable and stay on disk until your garbage-collect them, you can easily roll back to _any_ previous configuration.
+  * One caveats applies: _Stateful_ software like `consul`, that writes its own mutable data into `/var` and auto-upgrades its schema when a new version is launched, may not allow to read a newer schema version with an older version of the software.
+    You need to read the Changelogs of the software you use to determine this.
+
+### Upgrading the OS
+
+Let's try to upgrade our running server from the version of `nixpkgs` (and thus, NixOS) that is pinned in this git repository's `nix-channel/nixpkgs` submodule to a newer version.
+
+This will provide us with a newer kernel, newer nginx, newer everything.
+
+Prerequisites:
+
+* Deploy your server as in Tutorial 1, but do not shut it down at the end.
+
+You can also SSH into the server and run `systemctl status nginx.service` (you can press `q` to quit the pager and get back to the shell if you aren't already).
+It should show you a line like:
+
+```
+           ├─2868 nginx: master process /nix/store/j8kzb88g64bk2baxmz94r074kv84yl32-nginx-1.14.1/bin/nginx -c /nix/store/9g1affc46wvyahihk1d4gq52j8vqagjw-nginx.conf -p /var/spool/nginx
+```
+
+Because Nix's store paths include the versions of packages in the directory name, you can easily determine that you're running `nginx-1.14.1` here.
+
+Also run `uname -a` to see that your Linux kernel version is e.g. `4.14.111`.
+
+Now execute the upgrade:
+
+1. Upgrade the `nix-channel/nixpkgs` submodule to a newer version:
+  * `cd nix-channel/nixpkgs/`
+  * `git fetch` to fetch the latest commits.
+  * `git checkout f6c1d3b1`
+
+    That is the latest commit on the `release-19.09` branch at the time of writing.
+    You could `git checkout origin/release-19.09` here, but we use an explicit commit for full reproducibility of this tutorial.
+  * `cd ../..` back into the top-level directory.
+2. Deploy with:
+
+   ```sh
+   ./mynix nixops deploy -d example-nginx-deployment
+   ```
+
+That's it. If you now SSH into the machine and run `systemctl status nginx.service` again, you should observe that you are now running the newer version `nginx-1.16.1`.
+
+NixOps restarted all changed services for you, but running `uname -a` you can see that the kernel version is still the same as before.
+That is because upgrading the kernel requires a reboot.
+
+Deploy with reboot to ensure everything is upgraded:
+
+```sh
+./mynix nixops deploy -d example-nginx-deployment --force-reboot
+```
+
+Now `uname -a` should show the new kernel version.
+
+### Rolling deployments
+
+In production you likely want to upgrade one machine after the other ("rolling") as to not interrupt your users.
+
+As of writing, NixOps does not have built-in functionality for that.
+
+Instead, simply deploy individual machines sequentially:
+
+```sh
+./mynix nixops deploy -d example-nginx-deployment --force-reboot --include machine1
+./mynix nixops deploy -d example-nginx-deployment --force-reboot --include machine2
+# ...
+```
+
+It is recommended that you check that each machine is working fine before proceeding to the next, for minimal disruption.
+
+### Rolling back
+
+There are 2 methods you can use to roll back:
+
+* Using `nixops rollback`.
+* Simply bringing our configuration files into the old state and deploying again.
+
+The second option is usually better, because it is more declarative, and you can commit your rollback into version control, like any other change.
+But `nixops rollback` can be useful because it is even faster, and it is useful to know how it works because it showcases NixOS's immutability.
+
+#### Execute a rollback using `nixops` rollback
+
+1. List the past deployment generations using:
+
+    `./mynix nixops list-generations -d example-nginx-deployment`. Example output:
+
+    ```
+    1   2020-04-14 20:00:00
+    2   2020-04-14 20:15:01   (current)
+    ```
+2. Roll back to generation `1` using:
+
+    `./mynix nixops rollback 1 -d example-nginx-deployment`
+
+    You will see output like:
+
+    ```
+    switching from generation 2 to 1
+    ...
+    machine1..........................> activation finished successfully
+    ```
+
+As before, you can append `--force-reboot` to reboot into the changed kernel.
+
+The rollback only takes 10 seconds for me, or 18 seconds including reboot.
+
+#### Execute a rollback by checking out older nix files
+
+1. `(cd nix-channel/nixpkgs/ && git checkout -)`
+
+    This is similar to what we did when upgrading, but written as a one-liner, using `(` subshell parenthesis `)` to avoid having to `cd` back, and using `git checkout -` to checkout whatever the previously checked out commit was (you could also give an explicit commit).
+2. Deploy `./mynix nixops deploy -d example-nginx-deployment --force-reboot`
+
+And for the fun of it (as well as for Tutorial 3), let's switch again to the newer OS version:
+
+```sh
+(cd nix-channel/nixpkgs/ && git checkout f6c1d3b1)
+./mynix nixops deploy -d example-nginx-deployment --force-reboot
+```
+
+By now you should have a feeling for how fast doing OS upgrades is with NixOps.
+
+
+## Tutorial 3: Adding HTTPs
+
+In the previous tutorials, we set up an HTTP server with nixops, and could open its IP address in our browser to see the returned content.
+
+But modern sites should usually run on HTTPS!
+
+Let's use [Let's Encrypt](https://en.wikipedia.org/wiki/Let%27s_Encrypt)'s _Automated Certificate Management Environment_ (ACME) to automatically get HTTPs certificates for our nginx web server.
+
+Prequisites:
+
+* This requires that you have executed Tutorial 2 to upgrade to a newer NixOS, because current Let's Encrypt no longer accepts the older ACME protocol.
+* You need to own a domain name to point at your server's IP.
+  Ephemeral domains like AWS's `ec2-1-2-3-4.eu-central-1.compute.amazonaws.com` are intentionally rejected by Let's Encrypt.
+  If you do not have a domain name, you must skip executing this tutorial; but still read it!
+
+Change your deployment:
+
+1. Make a variable to contain your domain name:
+
+    ```diff
+    -  machine1 = { resources, nodes, ... }: {
+    +  machine1 = { resources, nodes, ... }:
+    +  let
+    +    dnsName = "machine1.nixops-tutorial.aws.nh2.me";
+    +  in
+    +  {
+    ```
+
+    Replace `machine1.nixops-tutorial.aws.nh2.me` by whatever your domain is.
+
+2. Point your domain name to your server's public IP (from `./mynix nixops info -d example-nginx-deployment`) by creating an DNS `A` record to it with your domain registrar.
+
+    If you use AWS's [Route53](https://aws.amazon.com/route53/) for your domains, like I do for my AWS _Hosted Zone_ `aws.nh2.me`, then you can also let NixOps set it to your server's IP automatically, by adding next to the other `deployment.ec2` options:
+
+    ```nix
+    deployment.route53 = {
+      accessKeyId = awsKeyId;
+      hostName = dnsName;
+      ttl = 1;
+    };
+    ```
+3. Open the HTTPS port 443 in the firewall:
+
+    ```diff
+         networking.firewall.allowedTCPPorts = [
+           80 # HTTP
+    +      443 # HTTPs
+         ];
+    ```
+4. Change your nginx config to reply to your `dnsName`, enable SSL and automatic ACME certificate fetching:
+
+    ```diff
+         # Enable nginx service
+         services.nginx = {
+           enable = true;
+    -      virtualHosts."someDefaultHost" = {
+    +      virtualHosts.${dnsName} = {
+             default = true; # makes this the default vhost if no other one matches
+             locations."/" = {
+               root = pkgs.writeTextDir "index.html" "Hello world!";
+             };
+    +        addSSL = true;
+    +        enableACME = true;
+           };
+         };
+    ```
+
+Now deploy.
+
+You should now be able to visit your domain in your browser with `https://` prefix.
+
+If it does not work, there was probably an issue getting a certificate from Let's Encrypt.
+In that case, SSH into your server and run (replace the domain by yours accordingly):
+
+```sh
+journalctl -e -u acme-machine1.nixops-tutorial.aws.nh2.me.timer
+```
+
+This will show you the last errors of the service that fetches the certificate, hopefully allowing you to diagnose the problem.
